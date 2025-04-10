@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -13,7 +16,7 @@ import (
 )
 
 type User struct {
-	ID       uint   `gorm:"primaryKey" json:"id"`
+	ID       uint   `gorm:"primaryKey"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
 }
@@ -21,49 +24,42 @@ type User struct {
 var db *gorm.DB
 
 func initDB() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("❌ Error loading .env file")
+	// Load environment variable dari .env (kalau ada)
+	if err := godotenv.Load(); err != nil {
+		log.Println("⚠️ .env file not found, reading environment from system")
 	}
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatal("❌ DATABASE_URL is not set in .env file")
+		log.Fatal("❌ DB_URL not found in environment variables.")
 	}
 
+	var err error
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
+
 	if err := db.AutoMigrate(&User{}); err != nil {
-		log.Fatalf("Migration failed: %v", err)
+		log.Fatalf("❌ AutoMigrate failed: %v", err)
 	}
 }
 
 func createUser(w http.ResponseWriter, r *http.Request) {
 	var user User
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := db.Create(&user).Error; err != nil {
-		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(user)
 }
 
-func getAllUsers(w http.ResponseWriter, r *http.Request) {
-	var users []User
-	if err := db.Find(&users).Error; err != nil {
-		http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
-		return
-	}
-	json.NewEncoder(w).Encode(users)
-}
-
-func readUser(w http.ResponseWriter, r *http.Request) {
+func readUserByID(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 	var user User
 	if err := db.First(&user, id).Error; err != nil {
@@ -71,6 +67,58 @@ func readUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(user)
+}
+
+func readUsersPaginated(w http.ResponseWriter, r *http.Request) {
+	var users []User
+
+	// Query param: page, limit, search, sort
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	search := r.URL.Query().Get("search")
+	sort := r.URL.Query().Get("sort")
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+
+	query := db.Model(&User{})
+
+	if search != "" {
+		query = query.Where("username ILIKE ? OR email ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	if sort != "" {
+		parts := strings.Split(sort, "_")
+		if len(parts) == 2 {
+			col := parts[0]
+			dir := strings.ToUpper(parts[1])
+			if (col == "username" || col == "email") && (dir == "ASC" || dir == "DESC") {
+				query = query.Order(fmt.Sprintf("%s %s", col, dir))
+			}
+		}
+	}
+
+	var total int64
+	query.Count(&total)
+
+	if err := query.Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"data":       users,
+		"page":       page,
+		"limit":      limit,
+		"total":      total,
+		"totalPages": (total + int64(limit) - 1) / int64(limit),
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func updateUser(w http.ResponseWriter, r *http.Request) {
@@ -80,15 +128,12 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
-	var updated User
-	if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	user.Username = updated.Username
-	user.Email = updated.Email
 	if err := db.Save(&user).Error; err != nil {
-		http.Error(w, "Failed to update user", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(user)
@@ -96,13 +141,8 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
-	var user User
-	if err := db.First(&user, id).Error; err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-	if err := db.Delete(&user).Error; err != nil {
-		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+	if err := db.Delete(&User{}, id).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -110,7 +150,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 
 func deleteAllUsers(w http.ResponseWriter, r *http.Request) {
 	if err := db.Where("1 = 1").Delete(&User{}).Error; err != nil {
-		http.Error(w, "Failed to delete all users", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -121,12 +161,12 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/users", createUser).Methods("POST")
-	r.HandleFunc("/users", getAllUsers).Methods("GET")
-	r.HandleFunc("/users", deleteAllUsers).Methods("DELETE")
-	r.HandleFunc("/users/{id}", readUser).Methods("GET")
+	r.HandleFunc("/users", readUsersPaginated).Methods("GET")
+	r.HandleFunc("/users/{id}", readUserByID).Methods("GET")
 	r.HandleFunc("/users/{id}", updateUser).Methods("PUT")
 	r.HandleFunc("/users/{id}", deleteUser).Methods("DELETE")
+	r.HandleFunc("/users", deleteAllUsers).Methods("DELETE")
 
-	log.Println("🚀 Server running at http://localhost:8080")
+	fmt.Println("🚀 Server running at http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
