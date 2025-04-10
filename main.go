@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -19,8 +21,16 @@ type User struct {
 var db *gorm.DB
 
 func initDB() {
-	dsn := "postgresql://erman:i1SDbcLUX-FLRcec8N-bmQ@system-kasir-9540.j77.aws-ap-southeast-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
-	var err error
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("❌ Error loading .env file")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("❌ DATABASE_URL is not set in .env file")
+	}
+
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -97,6 +107,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
 func deleteAllUsers(w http.ResponseWriter, r *http.Request) {
 	if err := db.Where("1 = 1").Delete(&User{}).Error; err != nil {
 		http.Error(w, "Failed to delete all users", http.StatusInternalServerError)
@@ -111,10 +122,10 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/users", createUser).Methods("POST")
 	r.HandleFunc("/users", getAllUsers).Methods("GET")
+	r.HandleFunc("/users", deleteAllUsers).Methods("DELETE")
 	r.HandleFunc("/users/{id}", readUser).Methods("GET")
 	r.HandleFunc("/users/{id}", updateUser).Methods("PUT")
 	r.HandleFunc("/users/{id}", deleteUser).Methods("DELETE")
-	r.HandleFunc("/users", deleteAllUsers).Methods("DELETE")
 
 	log.Println("🚀 Server running at http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
