@@ -1,0 +1,41 @@
+# Binaries
+/main
+*.exe
+*.out
+*.test
+
+# Vendor & dependencies
+/vendor/
+/go.sum
+/go.mod
+
+# Build & IDE
+*.log
+*.tmp
+*.swp
+.DS_Store
+.idea/
+.vscode/
+
+# Env
+.env
+
+# OS stuff
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Git itself
+.git/
+
+# Coverage/test
+*.coverprofile
+*.cover
+coverage.*
+
+# Editor swap/backup files
+*~
+*.bak
+*.old
+*.orig
+*.rej
