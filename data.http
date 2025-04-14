@@ -1,0 +1,20 @@
+POST http://localhost:8080/users HTTP/1.1
+Content-Type: application/json
+
+{
+	"name": "mukiman",
+	"address": "Jl. puspogiwang 3 no 14",
+	"phone": "0898483551",
+	"username": "lekdi",
+	"email": "mukiman@gmail.com"
+}
+
+###
+GET http://localhost:8080/users  HTTP/1.1
+# GET http://localhost:8080/users?sort=username_asc
+
+
+###
+GET http://localhost:8080/users/1063526325531705345 HTTP/1.1
+
+###

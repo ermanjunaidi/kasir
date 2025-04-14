@@ -2,7 +2,7 @@ FROM golang:1.21-alpine
 
 WORKDIR /app
 
-# Copy seluruh isi project SEKALIGUS (termasuk go.mod, go.sum, main.go, dll)
+# Copy seluruh isi project sekaligus (termasuk go.mod, go.sum, main.go, dll)
 COPY . .
 
 # Download dependensi

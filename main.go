@@ -17,6 +17,9 @@ import (
 
 type User struct {
 	ID       uint   `gorm:"primaryKey"`
+	Name     string `json:"name"`
+	Address  string `json:"address"`
+	Phone    string `json:"phone"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
 }
@@ -82,7 +85,7 @@ func readUsersPaginated(w http.ResponseWriter, r *http.Request) {
 		page = 1
 	}
 	if limit < 1 {
-		limit = 10
+		limit = 1000
 	}
 	offset := (page - 1) * limit
 
@@ -97,8 +100,9 @@ func readUsersPaginated(w http.ResponseWriter, r *http.Request) {
 		if len(parts) == 2 {
 			col := parts[0]
 			dir := strings.ToUpper(parts[1])
-			if (col == "username" || col == "email") && (dir == "ASC" || dir == "DESC") {
+			if (col == "username" || col == "email" || col == "name") && (dir == "ASC" || dir == "DESC") {
 				query = query.Order(fmt.Sprintf("%s %s", col, dir))
+
 			}
 		}
 	}
